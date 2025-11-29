@@ -1,12 +1,14 @@
 # app.py
+import os
+from functools import wraps
 from flask import Flask, render_template_string, request, redirect, url_for, flash, session
 from werkzeug.security import generate_password_hash, check_password_hash
-from functools import wraps
 
 app = Flask(__name__)
-app.secret_key = 'university_secret_key'  # demo only
+# use an environment secret if available, otherwise the demo key
+app.secret_key = os.environ.get("SECRET_KEY", "university_secret_key_demo")
 
-# ---------- In-memory data (demo) ----------
+# ---------- In-memory demo data ----------
 users = {}  # users[email] = {name, password_hash, enrollment, address, schedule: []}
 
 courses = [
@@ -39,14 +41,13 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not get_current_user_email():
-            # preserve requested path
+            # preserve requested path (safe: include path + query)
             next_url = request.full_path.rstrip('?')
             return redirect(url_for('auth_page', next=next_url))
         return f(*args, **kwargs)
     return decorated
 
 # ---------- Templates ----------
-# Small shared navbar
 NAV_HTML = """
 <nav class="navbar navbar-expand-lg navbar-dark mb-4" style="background:#2c3e50;">
   <div class="container">
@@ -68,7 +69,6 @@ NAV_HTML = """
 </nav>
 """
 
-# Auth page: shows tabs for Login and Signup
 AUTH_TEMPLATE = """
 <!doctype html>
 <html>
@@ -87,10 +87,9 @@ AUTH_TEMPLATE = """
         {% endfor %}
       {% endif %}
     {% endwith %}
-
     <div class="row">
       <div class="col-md-6">
-        <div class="card p-3">
+        <div class="card p-3 mb-3">
           <h4>Sign In</h4>
           <form method="POST" action="{{ url_for('auth_login') }}">
             <input type="hidden" name="next" value="{{ next or '' }}">
@@ -100,9 +99,8 @@ AUTH_TEMPLATE = """
           </form>
         </div>
       </div>
-
       <div class="col-md-6">
-        <div class="card p-3">
+        <div class="card p-3 mb-3">
           <h4>Sign Up</h4>
           <form method="POST" action="{{ url_for('auth_signup') }}">
             <input type="hidden" name="next" value="{{ next or '' }}">
@@ -124,7 +122,6 @@ AUTH_TEMPLATE = """
 </html>
 """
 
-# Courses page (requires login to register actions)
 COURSES_TEMPLATE = """
 <!doctype html>
 <html>
@@ -144,7 +141,6 @@ COURSES_TEMPLATE = """
         {% endfor %}
       {% endif %}
     {% endwith %}
-
     <div class="row">
       <div class="col-md-8">
         <h3>Available Courses</h3>
@@ -171,7 +167,6 @@ COURSES_TEMPLATE = """
           {% endfor %}
         </div>
       </div>
-
       <div class="col-md-4">
         <div class="card p-3">
           <h5>My Schedule</h5>
@@ -191,7 +186,6 @@ COURSES_TEMPLATE = """
           {% endif %}
         </div>
       </div>
-
     </div>
   </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -220,28 +214,22 @@ PROFILE_TEMPLATE = """
 </html>
 """
 
-# ---------- Routes: landing, auth, courses ----------
+# ---------- Routes ----------
 @app.route('/')
 def index():
     current = get_current_user_email()
-    return render_template_string(
-        """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
-        <body>{{ nav|safe }}<div class="container"><h2>Welcome to UniReg</h2>
-        <p>Use the links above to Sign In / Sign Up or go to Courses.</p></div></body></html>""",
-        nav=render_template_string(NAV_HTML, current_user=current, current_user_name=(users[current]['name'] if current and current in users else None))
-    )
+    nav = render_template_string(NAV_HTML, current_user=current, current_user_name=(users[current]['name'] if current and current in users else None))
+    return render_template_string("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'></head><body>{{ nav|safe }}<div class='container'><h2>Welcome to UniReg</h2><p>Use the navbar to Sign In / Sign Up or go to Courses.</p></div></body></html>", nav=nav)
 
-# Auth page: shows both signin and signup
 @app.route('/auth')
 def auth_page():
     next_url = request.args.get('next') or ''
     current = get_current_user_email()
     if current:
         return redirect(url_for('courses'))
-    return render_template_string(AUTH_TEMPLATE, next=next_url, nav=render_template_string(NAV_HTML, current_user=None))
+    nav = render_template_string(NAV_HTML, current_user=None)
+    return render_template_string(AUTH_TEMPLATE, next=next_url, nav=nav)
 
-# Login (POST)
 @app.route('/auth/login', methods=['POST'])
 def auth_login():
     next_url = request.form.get('next') or ''
@@ -257,7 +245,6 @@ def auth_login():
         return redirect(next_url)
     return redirect(url_for('courses'))
 
-# Signup (POST)
 @app.route('/auth/signup', methods=['POST'])
 def auth_signup():
     next_url = request.form.get('next') or ''
@@ -266,7 +253,6 @@ def auth_signup():
     email = request.form.get('email','').strip().lower()
     address = request.form.get('address','').strip()
     password = request.form.get('password','')
-    # validation
     if not (name and enrollment and email and address and password):
         flash("Fill all fields.", "danger")
         return redirect(url_for('auth_page', next=next_url))
@@ -284,14 +270,12 @@ def auth_signup():
         return redirect(next_url)
     return redirect(url_for('courses'))
 
-# Logout
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     flash("Logged out.", "info")
     return redirect(url_for('index'))
 
-# Profile (requires login)
 @app.route('/profile')
 @login_required
 def profile():
@@ -300,13 +284,10 @@ def profile():
     nav = render_template_string(NAV_HTML, current_user=current, current_user_name=user['name'])
     return render_template_string(PROFILE_TEMPLATE, user=user, user_email=current, nav=nav)
 
-# Courses page (main registration UI) - requires login to perform actions, but we allow viewing and ask to login when needed
 @app.route('/courses')
 def courses_page():
     current = get_current_user_email()
     if not current:
-        # show guest view but link will send to auth with next
-        nav = render_template_string(NAV_HTML, current_user=None)
         return redirect(url_for('auth_page', next='/courses'))
     user_schedule = get_user_schedule(current)
     my_schedule_details = [c for c in courses if c['id'] in user_schedule]
@@ -314,7 +295,6 @@ def courses_page():
     nav = render_template_string(NAV_HTML, current_user=current, current_user_name=users[current]['name'])
     return render_template_string(COURSES_TEMPLATE, nav=nav, courses=courses, user_schedule=user_schedule, my_schedule_details=my_schedule_details, total_credits=total_credits)
 
-# Register route (POST) - requires login
 @app.route('/register/<int:course_id>', methods=['POST'])
 @login_required
 def register(course_id):
@@ -334,7 +314,6 @@ def register(course_id):
         flash(f"Registered for {course['name']}.", "success")
     return redirect(url_for('courses'))
 
-# Reset schedule - requires login
 @app.route('/reset', methods=['POST'])
 @login_required
 def reset():
@@ -348,6 +327,9 @@ def reset():
     flash("Schedule cleared.", "info")
     return redirect(url_for('courses'))
 
-# ----------------------
+# ---------- Run ----------
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Use PORT env var for Render; bind to 0.0.0.0
+    port = int(os.environ.get("PORT", 5000))
+    debug_env = os.environ.get("DEBUG", "False").lower() in ("1", "true", "yes")
+    app.run(host="0.0.0.0", port=port, debug=debug_env)
