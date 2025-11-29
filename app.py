@@ -16,7 +16,7 @@ app.secret_key = 'university_secret_key'  # Needed for flashing messages
 # Updated: All 'enrolled' counts are initialized to 0.
 courses = [
     {"id": 101, "code": "AM2301", "name": "Applied Mathematics ||| ", "prof": "Mrs Shrawani Mitkari", "credits": 4, "capacity": 30, "enrolled": 0},
-    {"id": 102, "code": "CS-205", "name": "Data Structures", "prof": "Dr. Lovelace", "credits": 3, "capacity": 50, "enrolled": 0},
+    {"id": 102, "code": "CSE2304", "name": "Data Structures", "prof": "Mrs Monalisa Hati", "credits": 3, "capacity": 50, "enrolled": 0},
     {"id": 103, "code": "MATH-301", "name": "Linear Algebra", "prof": "Dr. Euler", "credits": 4, "capacity": 40, "enrolled": 0},
     {"id": 104, "code": "PHY-101", "name": "Quantum Mechanics", "prof": "Dr. Feynman", "credits": 3, "capacity": 25, "enrolled": 0},
     {"id": 105, "code": "ENG-101", "name": "Technical Writing", "prof": "Prof. Hemingway", "credits": 2, "capacity": 60, "enrolled": 0},
