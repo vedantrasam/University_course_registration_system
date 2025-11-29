@@ -18,7 +18,7 @@ courses = [
     {"id": 101, "code": "AM2301", "name": "Applied Mathematics ||| ", "prof": "Mrs Shrawani Mitkari", "credits": 4, "capacity": 30, "enrolled": 0},
     {"id": 102, "code": "CSE2304", "name": "Data Structures", "prof": "Mrs Monalisa Hati", "credits": 3, "capacity": 50, "enrolled": 0},
     {"id": 103, "code": "FL-301", "name": "Foreign Language", "prof": "Mrs Surekha Athawade", "credits": 4, "capacity": 40, "enrolled": 0},
-    {"id": 104, "code": "PHY-101", "name": "Quantum Mechanics", "prof": "Dr. Feynman", "credits": 3, "capacity": 25, "enrolled": 0},
+    {"id": 104, "code": "DSD2303", "name": "Digital logic and Computer Architecture", "prof": "Mrs Saranya Pandian", "credits": 3, "capacity": 25, "enrolled": 0},
     {"id": 105, "code": "ENG-101", "name": "Technical Writing", "prof": "Prof. Hemingway", "credits": 2, "capacity": 60, "enrolled": 0},
     {"id": 106, "code": "HIST-200", "name": "World History", "prof": "Dr. Howard", "credits": 3, "capacity": 30, "enrolled": 0}
 ]
