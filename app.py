@@ -15,7 +15,7 @@ app.secret_key = 'university_secret_key'  # Needed for flashing messages
 # --- 1. MOCK DATABASE ---
 # Updated: All 'enrolled' counts are initialized to 0.
 courses = [
-    {"id": 101, "code": "AM2301", "name": "Intro to AI & ML", "prof": "Dr. Turing", "credits": 4, "capacity": 30, "enrolled": 0},
+    {"id": 101, "code": "AM2301", "name": "Applied Mathematics ||| ", "prof": "Mrs Shrawani Mitkari", "credits": 4, "capacity": 30, "enrolled": 0},
     {"id": 102, "code": "CS-205", "name": "Data Structures", "prof": "Dr. Lovelace", "credits": 3, "capacity": 50, "enrolled": 0},
     {"id": 103, "code": "MATH-301", "name": "Linear Algebra", "prof": "Dr. Euler", "credits": 4, "capacity": 40, "enrolled": 0},
     {"id": 104, "code": "PHY-101", "name": "Quantum Mechanics", "prof": "Dr. Feynman", "credits": 3, "capacity": 25, "enrolled": 0},
