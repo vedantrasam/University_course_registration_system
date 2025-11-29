@@ -1,6 +1,7 @@
 # app.py
 from flask import Flask, render_template_string, request, redirect, url_for, flash, session
 from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 app = Flask(__name__)
 app.secret_key = 'university_secret_key'  # for session & flash (demo only)
@@ -25,11 +26,7 @@ courses = [
     {"id": 106, "code": "CSE2308", "name": "Java Programming", "prof": "Dr Deepika Shekhawat", "credits": 3, "capacity": 30, "enrolled": 0}
 ]
 
-# --- TEMPLATES (kept inline for easy demo) ---
-HTML_TEMPLATE = """..."""  # shortened here for brevity in the message body
-# We'll build the actual HTML_TEMPLATE below to avoid truncation issues.
-
-# Build main HTML_TEMPLATE (same styling as before, added Profile link)
+# --- Templates (inline) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -59,8 +56,9 @@ HTML_TEMPLATE = """
           <li class="nav-item me-2"><a class="btn btn-sm btn-outline-light" href="{{ url_for('profile') }}">Profile</a></li>
           <li class="nav-item"><a class="btn btn-sm btn-outline-light" href="{{ url_for('logout') }}">Logout</a></li>
         {% else %}
-          <li class="nav-item"><a class="btn btn-sm btn-outline-light me-2" href="{{ url_for('login') }}">Login</a></li>
-          <li class="nav-item"><a class="btn btn-sm btn-light" href="{{ url_for('signup') }}">Sign Up</a></li>
+          <!-- send next param so after login user returns to current page -->
+          <li class="nav-item"><a class="btn btn-sm btn-outline-light me-2" href="{{ url_for('login', next=request.path) }}">Login</a></li>
+          <li class="nav-item"><a class="btn btn-sm btn-light" href="{{ url_for('signup', next=request.path) }}">Sign Up</a></li>
         {% endif %}
       </ul>
     </div>
@@ -107,7 +105,7 @@ HTML_TEMPLATE = """
                     </form>
                   {% endif %}
                 {% else %}
-                  <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-register">Login to Register</a>
+                  <a href="{{ url_for('login', next=request.path) }}" class="btn btn-outline-primary btn-register">Login to Register</a>
                 {% endif %}
               </div>
             </div>
@@ -151,7 +149,6 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# Login / Signup templates (signup now includes enrollment + address)
 LOGIN_TEMPLATE = """
 <!doctype html>
 <title>Login</title>
@@ -159,10 +156,11 @@ LOGIN_TEMPLATE = """
 <div class="container" style="max-width:520px;margin-top:40px;">
   <h3>Login</h3>
   <form method="POST">
+    <input type="hidden" name="next" value="{{ next or '' }}">
     <div class="mb-3"><label>Email</label><input name="email" required class="form-control" type="email"></div>
     <div class="mb-3"><label>Password</label><input name="password" required class="form-control" type="password"></div>
     <button class="btn btn-primary">Login</button>
-    <a class="btn btn-link" href="{{ url_for('signup') }}">Create account</a>
+    <a class="btn btn-link" href="{{ url_for('signup', next=next) }}">Create account</a>
   </form>
 </div>
 """
@@ -174,6 +172,7 @@ SIGNUP_TEMPLATE = """
 <div class="container" style="max-width:600px;margin-top:24px;">
   <h3>Create Account</h3>
   <form method="POST">
+    <input type="hidden" name="next" value="{{ request.args.get('next','') }}">
     <div class="row">
       <div class="mb-3 col-md-6"><label>Name</label><input name="name" required class="form-control"></div>
       <div class="mb-3 col-md-6"><label>Enrollment No.</label><input name="enrollment" required class="form-control"></div>
@@ -182,12 +181,11 @@ SIGNUP_TEMPLATE = """
     <div class="mb-3"><label>Address</label><input name="address" required class="form-control" type="text"></div>
     <div class="mb-3"><label>Password</label><input name="password" required class="form-control" type="password"></div>
     <button class="btn btn-success">Sign Up</button>
-    <a class="btn btn-link" href="{{ url_for('login') }}">Already have an account?</a>
+    <a class="btn btn-link" href="{{ url_for('login', next=request.args.get('next','')) }}">Already have an account?</a>
   </form>
 </div>
 """
 
-# Profile template
 PROFILE_TEMPLATE = """
 <!doctype html>
 <title>Profile</title>
@@ -217,6 +215,16 @@ def find_user_by_enrollment(enrollment_no):
         if u.get('enrollment') == enrollment_no:
             return e
     return None
+
+# login_required decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not get_current_user_email():
+            next_url = request.full_path.rstrip('?')
+            return redirect(url_for('login', next=next_url))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # --- Routes ---
 @app.route('/')
@@ -258,22 +266,33 @@ def signup():
         users[email] = {"name": name, "password_hash": pw_hash, "enrollment": enrollment, "address": address, "schedule": []}
         session['user'] = email
         flash(f"Account created. Welcome, {name}!", "success")
+        # redirect to next (if passed) otherwise home
+        next_url = request.form.get('next') or request.args.get('next')
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect(url_for('home'))
     return render_template_string(SIGNUP_TEMPLATE)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # read next from args or form
+    next_url = request.args.get('next') or request.form.get('next') or None
+
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
         password = request.form['password']
         user = users.get(email)
         if not user or not check_password_hash(user['password_hash'], password):
             flash("Invalid credentials.", "danger")
-            return render_template_string(LOGIN_TEMPLATE)
+            return render_template_string(LOGIN_TEMPLATE, next=next_url)
         session['user'] = email
         flash(f"Welcome back, {user['name']}!", "success")
+        # safe redirect only to same-site path
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect(url_for('home'))
-    return render_template_string(LOGIN_TEMPLATE)
+    # GET
+    return render_template_string(LOGIN_TEMPLATE, next=next_url)
 
 @app.route('/logout')
 def logout():
@@ -282,20 +301,16 @@ def logout():
     return redirect(url_for('home'))
 
 @app.route('/profile')
+@login_required
 def profile():
     current_user = get_current_user_email()
-    if not current_user:
-        flash("Please log in to view your profile.", "warning")
-        return redirect(url_for('login'))
     user = users[current_user]
     return render_template_string(PROFILE_TEMPLATE, user=user, user_email=current_user)
 
 @app.route('/register/<int:course_id>', methods=['POST'])
+@login_required
 def register(course_id):
     current_user = get_current_user_email()
-    if not current_user:
-        flash("You must be logged in to register for a course.", "warning")
-        return redirect(url_for('login'))
     course = next((c for c in courses if c['id'] == course_id), None)
     if not course:
         flash("Course not found.", "danger")
@@ -312,11 +327,9 @@ def register(course_id):
     return redirect(url_for('home'))
 
 @app.route('/reset', methods=['POST'])
+@login_required
 def reset():
     current_user = get_current_user_email()
-    if not current_user:
-        flash("You must be logged in to reset your schedule.", "warning")
-        return redirect(url_for('login'))
     user_sched = users[current_user]['schedule']
     for course_id in user_sched:
         course = next((c for c in courses if c['id'] == course_id), None)
@@ -328,3 +341,4 @@ def reset():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
