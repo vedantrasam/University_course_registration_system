@@ -1,32 +1,54 @@
-# app.py
+import os
 from flask import Flask, render_template_string, request, redirect, url_for, flash, session
+from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 
-app = Flask(__name__)
-app.secret_key = 'university_secret_key'  # for session & flash (demo only)
+app = Flask(_name_)
+app.secret_key = 'university_secret_key'
 
-# --- In-memory user store (demo) ---
-# users[email] = {
-#   "name": str,
-#   "password_hash": str,
-#   "enrollment": str,
-#   "address": str,
-#   "schedule": [course_id, ...]
-# }
-users = {}
+# --- 1. DATABASE CONFIGURATION ---
+# Connect to Render's Postgres DB or a local file
+database_url = os.environ.get('DATABASE_URL', 'sqlite:///local.db')
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-# --- Mock courses ---
-courses = [
-    {"id": 101, "code": "AM2301", "name": "Applied Mathematics", "prof": "Mrs Shrawani Mitkari", "credits": 4, "capacity": 30, "enrolled": 0},
-    {"id": 102, "code": "CSE2304", "name": "Data Structures", "prof": "Mrs Monalisa Hati", "credits": 3, "capacity": 50, "enrolled": 0},
-    {"id": 103, "code": "FL-301", "name": "Foreign Language", "prof": "Mrs Surekha Athawade", "credits": 4, "capacity": 40, "enrolled": 0},
-    {"id": 104, "code": "DSD2303", "name": "Digital logic and Computer Architecture", "prof": "Mrs Saranya Pandian", "credits": 3, "capacity": 25, "enrolled": 0},
-    {"id": 105, "code": "CSE2302", "name": "Data Base Management system", "prof": "Dr Dipak Raskar", "credits": 2, "capacity": 60, "enrolled": 0},
-    {"id": 106, "code": "CSE2308", "name": "Java Programming", "prof": "Dr Deepika Shekhawat", "credits": 3, "capacity": 30, "enrolled": 0}
-]
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# --- Templates (inline) ---
+db = SQLAlchemy(app)
+
+# --- 2. DATABASE MODELS ---
+
+# A "Link" table to remember which user registered for which course
+registrations = db.Table('registrations',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('course_id', db.Integer, db.ForeignKey('course.id'), primary_key=True)
+)
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    enrollment_no = db.Column(db.String(50), unique=True, nullable=False) # Renamed to avoid confusion with 'enrolled' count
+    address = db.Column(db.String(200))
+    
+    # Relationship: A user can have many courses
+    courses = db.relationship('Course', secondary=registrations, backref='students')
+
+class Course(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(20), unique=True, nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    prof = db.Column(db.String(100), nullable=False)
+    credits = db.Column(db.Integer, nullable=False)
+    capacity = db.Column(db.Integer, nullable=False)
+    enrolled = db.Column(db.Integer, default=0)
+
+# --- 3. TEMPLATES (Updated for DB objects) ---
+# I've updated the templates to use 'user.name' instead of dictionary lookups
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -48,15 +70,14 @@ HTML_TEMPLATE = """
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark mb-4">
   <div class="container">
-    <a class="navbar-brand" href="/">🏛️ University Portal</a>
+    <a class="navbar-brand" href="/">🏛 University Portal</a>
     <div class="collapse navbar-collapse">
       <ul class="navbar-nav ms-auto">
         {% if current_user %}
-          <li class="nav-item me-3"><span class="navbar-text text-white">Student: <strong>{{ current_user_name }}</strong></span></li>
+          <li class="nav-item me-3"><span class="navbar-text text-white">Student: <strong>{{ current_user.name }}</strong></span></li>
           <li class="nav-item me-2"><a class="btn btn-sm btn-outline-light" href="{{ url_for('profile') }}">Profile</a></li>
           <li class="nav-item"><a class="btn btn-sm btn-outline-light" href="{{ url_for('logout') }}">Logout</a></li>
         {% else %}
-          <!-- send next param so after login user returns to current page -->
           <li class="nav-item"><a class="btn btn-sm btn-outline-light me-2" href="{{ url_for('login', next=request.path) }}">Login</a></li>
           <li class="nav-item"><a class="btn btn-sm btn-light" href="{{ url_for('signup', next=request.path) }}">Sign Up</a></li>
         {% endif %}
@@ -95,7 +116,7 @@ HTML_TEMPLATE = """
               </div>
               <div class="card-footer bg-white">
                 {% if current_user %}
-                  {% if course.id in user_schedule %}
+                  {% if course in current_user.courses %}
                     <button class="btn btn-secondary btn-register" disabled>Enrolled ✅</button>
                   {% elif course.enrolled >= course.capacity %}
                     <button class="btn btn-outline-danger btn-register" disabled>Class Full 🚫</button>
@@ -118,12 +139,12 @@ HTML_TEMPLATE = """
       <div class="card p-3">
         <h4 class="mb-3">📅 My Schedule</h4>
         {% if current_user %}
-          {% if my_schedule_details %}
+          {% if current_user.courses %}
             <ul class="list-group list-group-flush">
-              {% for item in my_schedule_details %}
+              {% for course in current_user.courses %}
                 <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <div><strong>{{ item.code }}</strong><br><small>{{ item.name }}</small></div>
-                  <span class="badge bg-primary rounded-pill">{{ item.credits }} Cr</span>
+                  <div><strong>{{ course.code }}</strong><br><small>{{ course.name }}</small></div>
+                  <span class="badge bg-primary rounded-pill">{{ course.credits }} Cr</span>
                 </li>
               {% endfor %}
             </ul>
@@ -194,52 +215,44 @@ PROFILE_TEMPLATE = """
   <h3>My Profile</h3>
   <div class="card p-3">
     <p><strong>Name:</strong> {{ user.name }}</p>
-    <p><strong>Email:</strong> {{ user_email }}</p>
-    <p><strong>Enrollment No.:</strong> {{ user.enrollment }}</p>
+    <p><strong>Email:</strong> {{ user.email }}</p>
+    <p><strong>Enrollment No.:</strong> {{ user.enrollment_no }}</p>
     <p><strong>Address:</strong> {{ user.address }}</p>
     <a class="btn btn-secondary" href="{{ url_for('home') }}">Back to Home</a>
   </div>
 </div>
 """
 
-# --- Helpers ---
-def get_current_user_email():
-    return session.get('user')
-
-def get_user_schedule(email):
-    user = users.get(email)
-    return user.get('schedule', []) if user else []
-
-def find_user_by_enrollment(enrollment_no):
-    for e, u in users.items():
-        if u.get('enrollment') == enrollment_no:
-            return e
+# --- 4. HELPERS ---
+def get_current_user():
+    if 'user_id' in session:
+        return User.query.get(session['user_id'])
     return None
 
-# login_required decorator
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not get_current_user_email():
+        if not get_current_user():
             next_url = request.full_path.rstrip('?')
             return redirect(url_for('login', next=next_url))
         return f(*args, **kwargs)
     return decorated_function
 
-# --- Routes ---
+# --- 5. ROUTES (Logic Updated for DB) ---
+
 @app.route('/')
 def home():
-    current_user = get_current_user_email()
-    user_schedule = get_user_schedule(current_user) if current_user else []
-    my_schedule_details = [c for c in courses if c['id'] in user_schedule]
-    total_credits = sum(c['credits'] for c in my_schedule_details)
+    current_user = get_current_user()
+    courses = Course.query.order_by(Course.code).all()
+    
+    total_credits = 0
+    if current_user:
+        total_credits = sum(c.credits for c in current_user.courses)
+        
     return render_template_string(
         HTML_TEMPLATE,
         courses=courses,
         current_user=current_user,
-        current_user_name=(users[current_user]['name'] if current_user and current_user in users else None),
-        user_schedule=user_schedule,
-        my_schedule_details=my_schedule_details,
         total_credits=total_credits
     )
 
@@ -251,93 +264,125 @@ def signup():
         email = request.form['email'].strip().lower()
         address = request.form['address'].strip()
         password = request.form['password']
-        # Validate fields
+
         if not (name and enrollment and email and address and password):
             flash("Please fill all fields.", "danger")
             return render_template_string(SIGNUP_TEMPLATE)
-        if email in users:
-            flash("Email already registered. Please login.", "warning")
+            
+        # Check if user exists in DB
+        if User.query.filter((User.email == email) | (User.enrollment_no == enrollment)).first():
+            flash("Email or Enrollment number already registered.", "warning")
             return redirect(url_for('login'))
-        # prevent duplicate enrollment numbers
-        if find_user_by_enrollment(enrollment):
-            flash("Enrollment number already used. If this is you, please login.", "warning")
-            return redirect(url_for('login'))
-        pw_hash = generate_password_hash(password)
-        users[email] = {"name": name, "password_hash": pw_hash, "enrollment": enrollment, "address": address, "schedule": []}
-        session['user'] = email
+
+        # Create new user in DB
+        hashed_pw = generate_password_hash(password)
+        new_user = User(name=name, email=email, enrollment_no=enrollment, address=address, password_hash=hashed_pw)
+        
+        db.session.add(new_user)
+        db.session.commit()
+        
+        session['user_id'] = new_user.id
         flash(f"Account created. Welcome, {name}!", "success")
-        # redirect to next (if passed) otherwise home
+        
         next_url = request.form.get('next') or request.args.get('next')
         if next_url and next_url.startswith('/'):
             return redirect(next_url)
         return redirect(url_for('home'))
+        
     return render_template_string(SIGNUP_TEMPLATE)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # read next from args or form
     next_url = request.args.get('next') or request.form.get('next') or None
 
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
         password = request.form['password']
-        user = users.get(email)
-        if not user or not check_password_hash(user['password_hash'], password):
+        
+        user = User.query.filter_by(email=email).first()
+        
+        if not user or not check_password_hash(user.password_hash, password):
             flash("Invalid credentials.", "danger")
             return render_template_string(LOGIN_TEMPLATE, next=next_url)
-        session['user'] = email
-        flash(f"Welcome back, {user['name']}!", "success")
-        # safe redirect only to same-site path
+            
+        session['user_id'] = user.id
+        flash(f"Welcome back, {user.name}!", "success")
+        
         if next_url and next_url.startswith('/'):
             return redirect(next_url)
         return redirect(url_for('home'))
-    # GET
+        
     return render_template_string(LOGIN_TEMPLATE, next=next_url)
 
 @app.route('/logout')
 def logout():
-    session.pop('user', None)
+    session.pop('user_id', None)
     flash("Logged out.", "info")
     return redirect(url_for('home'))
 
 @app.route('/profile')
 @login_required
 def profile():
-    current_user = get_current_user_email()
-    user = users[current_user]
-    return render_template_string(PROFILE_TEMPLATE, user=user, user_email=current_user)
+    return render_template_string(PROFILE_TEMPLATE, user=get_current_user())
 
 @app.route('/register/<int:course_id>', methods=['POST'])
 @login_required
 def register(course_id):
-    current_user = get_current_user_email()
-    course = next((c for c in courses if c['id'] == course_id), None)
+    current_user = get_current_user()
+    course = Course.query.get(course_id)
+    
     if not course:
         flash("Course not found.", "danger")
         return redirect(url_for('home'))
-    user_sched = users[current_user]['schedule']
-    if course_id in user_sched:
-        flash(f"You are already registered for {course['code']}.", "warning")
-    elif course['enrolled'] >= course['capacity']:
-        flash(f"Sorry, {course['code']} is currently full.", "danger")
+        
+    if course in current_user.courses:
+        flash(f"You are already registered for {course.code}.", "warning")
+    elif course.enrolled >= course.capacity:
+        flash(f"Sorry, {course.code} is currently full.", "danger")
     else:
-        course['enrolled'] += 1
-        user_sched.append(course_id)
-        flash(f"Successfully registered for {course['name']}!", "success")
+        # DB Logic: Link user to course
+        current_user.courses.append(course)
+        course.enrolled += 1
+        db.session.commit()
+        flash(f"Successfully registered for {course.name}!", "success")
+        
     return redirect(url_for('home'))
 
 @app.route('/reset', methods=['POST'])
 @login_required
 def reset():
-    current_user = get_current_user_email()
-    user_sched = users[current_user]['schedule']
-    for course_id in user_sched:
-        course = next((c for c in courses if c['id'] == course_id), None)
-        if course:
-            course['enrolled'] = max(0, course['enrolled'] - 1)
-    users[current_user]['schedule'] = []
+    current_user = get_current_user()
+    
+    # Decrease enrollment count for all courses the user is in
+    for course in current_user.courses:
+        if course.enrolled > 0:
+            course.enrolled -= 1
+            
+    # Clear the relationship
+    current_user.courses = []
+    db.session.commit()
+    
     flash("Your schedule has been cleared.", "info")
     return redirect(url_for('home'))
 
-if __name__ == '__main__':
+# --- 6. INITIALIZATION ---
+def seed_database():
+    """Populate database with your specific courses if empty"""
+    if Course.query.first() is None:
+        initial_courses = [
+            Course(code="AM2301", name="Applied Mathematics", prof="Mrs Shrawani Mitkari", credits=4, capacity=30),
+            Course(code="CSE2304", name="Data Structures", prof="Mrs Monalisa Hati", credits=3, capacity=50),
+            Course(code="FL-301", name="Foreign Language", prof="Mrs Surekha Athawade", credits=4, capacity=40),
+            Course(code="DSD2303", name="Digital logic and Computer Architecture", prof="Mrs Saranya Pandian", credits=3, capacity=25),
+            Course(code="CSE2302", name="Data Base Management system", prof="Dr Dipak Raskar", credits=2, capacity=60),
+            Course(code="CSE2308", name="Java Programming", prof="Dr Deepika Shekhawat", credits=3, capacity=30)
+        ]
+        db.session.add_all(initial_courses)
+        db.session.commit()
+        print("Database seeded with your courses!")
+
+if _name_ == '_main_':
+    with app.app_context():
+        db.create_all()
+        seed_database()
     app.run(debug=True)
