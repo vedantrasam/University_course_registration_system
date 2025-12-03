@@ -4,9 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 
-import io
-import pandas as pd
-from flask import send_file, request, abort
+
 
 # Use the real special name __name__
 app = Flask(__name__)
@@ -396,31 +394,4 @@ if __name__ == '__main__':
     app.run(debug=True)
 
 
-DOWNLOAD_SECRET = "mysecret123"   # change this if you want
-
-@app.route("/download-registrations")
-def download_registrations():
-    token = request.args.get("token")
-    if token != DOWNLOAD_SECRET:
-        return abort(403)
-
-    users = User.query.all()
-    rows = []
-
-    for u in users:
-        courses = [c.name for c in u.courses]
-        rows.append({
-            "name": u.name,
-            "email": u.email,
-            "enrollment_no": u.enrollment_no,
-            "address": u.address,
-            "courses": ", ".join(courses)
-        })
-
-    df = pd.DataFrame(rows)
-    buf = io.BytesIO()
-    df.to_excel(buf, index=False)
-    buf.seek(0)
-
-    return send_file(buf, download_name="registrations.xlsx", as_attachment=True)
 
