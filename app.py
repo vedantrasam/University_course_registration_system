@@ -4,12 +4,8 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 
-
-
-# Use the real special name __name__
 app = Flask(__name__)
-# Use an environment variable in production; fallback to a default for dev
-app.secret_key = os.environ.get('SECRET_KEY', 'university_secret_key')
+app.secret_key = 'university_secret_key'
 
 # --- 1. DATABASE CONFIGURATION ---
 # Connect to Render's Postgres DB or a local file
@@ -24,6 +20,7 @@ db = SQLAlchemy(app)
 
 # --- 2. DATABASE MODELS ---
 
+# Association Table: Links Users to Courses
 registrations = db.Table('registrations',
     db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
     db.Column('course_id', db.Integer, db.ForeignKey('course.id'), primary_key=True)
@@ -34,7 +31,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     name = db.Column(db.String(100), nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
-    enrollment_no = db.Column(db.String(50), unique=True, nullable=False) # Renamed to avoid confusion with 'enrolled' count
+    enrollment_no = db.Column(db.String(50), unique=True, nullable=False)
     address = db.Column(db.String(200))
     
     # Relationship: A user can have many courses
@@ -49,7 +46,7 @@ class Course(db.Model):
     capacity = db.Column(db.Integer, nullable=False)
     enrolled = db.Column(db.Integer, default=0)
 
-# --- 3. TEMPLATES (Updated for DB objects) ---
+# --- 3. TEMPLATES ---
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -72,7 +69,7 @@ HTML_TEMPLATE = """
 <body>
 <nav class="navbar navbar-expand-lg navbar-dark mb-4">
   <div class="container">
-    <a class="navbar-brand" href="/">🏛 University Portal</a>
+    <a class="navbar-brand" href="/">🏛️ University Portal</a>
     <div class="collapse navbar-collapse">
       <ul class="navbar-nav ms-auto">
         {% if current_user %}
@@ -225,6 +222,56 @@ PROFILE_TEMPLATE = """
 </div>
 """
 
+ADMIN_TEMPLATE = """
+<!doctype html>
+<title>Admin Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<body class="bg-light">
+<div class="container mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>👑 Teacher's Dashboard</h2>
+    <a href="/" class="btn btn-outline-primary">Back to App</a>
+  </div>
+  
+  <div class="card shadow-sm">
+    <div class="card-header bg-dark text-white">Registered Students</div>
+    <div class="card-body p-0">
+      <table class="table table-striped mb-0">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Enrollment No.</th>
+            <th>Courses Taken</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td>{{ user.id }}</td>
+            <td>{{ user.name }}</td>
+            <td>{{ user.email }}</td>
+            <td>{{ user.enrollment_no }}</td>
+            <td>
+                {% if user.courses %}
+                    {% for course in user.courses %}
+                        <span class="badge bg-secondary">{{ course.code }}</span>
+                    {% endfor %}
+                {% else %}
+                    <span class="text-muted small">None</span>
+                {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</body>
+"""
+
 # --- 4. HELPERS ---
 def get_current_user():
     if 'user_id' in session:
@@ -240,7 +287,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- 5. ROUTES (Logic Updated for DB) ---
+# --- 5. ROUTES ---
 
 @app.route('/')
 def home():
@@ -257,6 +304,19 @@ def home():
         current_user=current_user,
         total_credits=total_credits
     )
+
+# --- NEW: ADMIN ROUTE ---
+@app.route('/admin_dashboard')
+def admin_dashboard():
+    # Simple security check!
+    # In URL you must type: /admin_dashboard?key=teacher123
+    secret_key = request.args.get('key')
+    
+    if secret_key != 'teacher123':
+        return "<h1>⛔ Access Denied</h1><p>You need the secret key.</p>", 403
+        
+    all_users = User.query.all()
+    return render_template_string(ADMIN_TEMPLATE, users=all_users)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -383,15 +443,8 @@ def seed_database():
         db.session.commit()
         print("Database seeded with your courses!")
 
-# Optional: automatically create DB and seed when the app is imported (useful for Render/gunicorn).
-# Control with AUTO_INIT_DB env var; default 'true' so it runs unless you set it to 'false'.
-if os.environ.get('AUTO_INIT_DB', 'true').lower() == 'true':
+if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         seed_database()
-
-if __name__ == '__main__':
     app.run(debug=True)
-
-
-
